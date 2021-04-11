@@ -1,0 +1,91 @@
+/etc/init.d/sshd restart
+pacman -Sy
+pacman -S parted
+parted -s /dev/sdb mklabel gpt
+parted -s -a optimal /dev/sdb mkpart "primary" "fat32" "0%" "512MiB"
+parted -s /dev/sdb set 1 esp on
+parted -s -a optimal /dev/sdb mkpart "primary" "ext4" "512MiB" "100%"
+parted -s /dev/sdb set 2 lvm on
+cryptsetup luksFormat -v --type=luks1 /dev/sdb2
+cryptsetup luksOpen /dev/sdb2 lvm-system
+
+Note: If any of the commands produces the following warning, it can be ignored, as: “This is because /run is not available inside the chroot.”
+lvmetab
+
+pvcreate /dev/mapper/lvm-system
+vgcreate lvmSystem /dev/mapper/lvm-system
+lvcreate -L 16G lvmSystem -n volSwap
+lvcreate -l +100%FREE lvmSystem -n volRoot
+mkswap /dev/lvmSystem/volSwap
+mkfs.fat -n ESP -F 32 /dev/sdb1
+mkfs.ext4 -L volRoot /dev/lvmSystem/volRoot
+swapon /dev/lvmSystem/volSwap
+mount /dev/lvmSystem/volRoot /mnt
+mkdir -p /mnt/boot/efi
+mount /dev/sdb1 /mnt/boot/efi
+
+#below for hardened version
+basestrap /mnt base base-devel openrc
+basestrap /mnt linux-firmware linux-hardened linux-hardened-headers usbctl
+
+fstabgen -U /mnt >> /mnt/etc/fstab
+
+#verify after restart aswell using /tmp at end
+findmnt --target /run
+
+artix-chroot /mnt /bin/bash
+echo -e "en_US.UTF-8 UTF-8" >> /etc/locale.gen
+locale-gen
+echo LANG=en_US.UTF-8 > /etc/locale.conf
+export LANG=en_US.UTF-8
+ln -s /usr/share/zoneinfo/America/Toronto /etc/localtime
+echo "hostname=Romdeau" > /etc/conf.d/hostname
+
+sed -i "s/modconf block/modconf block encrypt lvm2 resume/g" /etc/mkinitcpio.conf
+dd if=/dev/random of=/crypto_keyfile.bin bs=512 count=8 iflag=fullblock
+chmod 000 /crypto_keyfile.bin
+sed -i "s/FILES=(/FILES=(\/crypto_keyfile.bin/g" /etc/mkinitcpio.conf
+pacman -S lvm2 lvm2-openrc cryptsetup cryptsetup-openrc
+cryptsetup luksAddKey /dev/sdb2 /crypto_keyfile.bin
+mkinitcpio -p linux-hardened
+passwd #root
+pacman -S grub efibootmgr
+pacman -S dosfstools freetype2 fuse2 gptfdisk libisoburn mtools os-prober
+sed -i "s/quiet/quiet resume=UUID=`blkid -s UUID -o value /dev/lvmSystem/volSwap`/g" /etc/default/grub
+sed -i "s/GRUB_CMDLINE_LINUX=\"\"/GRUB_CMDLINE_LINUX=\"cryptdevice=UUID=`blkid -s UUID -o value /dev/sdb2`:lvm-system\"/g" /etc/default/grub
+sed -i "s/#GRUB_ENABLE_CRYPTODISK/GRUB_ENABLE_CRYPTODISK/g" /etc/default/grub
+sed -i "s/#GRUB_COLOR_NORMAL/GRUB_COLOR_NORMAL/g" /etc/default/grub
+sed -i "s/#GRUB_COLOR_HIGHLIGHT/GRUB_COLOR_HIGHLIGHT/g" /etc/default/grub
+
+grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=artix --recheck /dev/sdb
+grub-mkconfig -o /boot/grub/grub.cfg
+
+pacman -S haveged haveged-openrc
+rc-update add haveged default
+pacman -S cronie cronie-openrc
+rc-update add cronie default
+
+useradd -m -G wheel -s /bin/bash USERNAME
+passwd USERNAME
+sed -i "s/# %wheel ALL=(ALL) ALL/%wheel ALL=(ALL) ALL/g" /etc/sudoers
+
+pacman -S networkmanager networkmanager-openrc networkmanager-openvpn network-manager-applet
+rc-update add NetworkManager default
+
+pacman -S openssh openssh-openrc
+rc-update add sshd default
+
+pacman -S ntp ntp-openrc acpid acpid-openrc syslog-ng syslog-ng-openrc
+rc-update add ntpd default
+rc-update add acpid default
+rc-update add syslog-ng default
+
+pacman -S vi artools bash-completion lsof strace
+pacman -S wget htop mc zip samba unrar p7zip unzip
+pacman -S hdparm smartmontools hwinfo dmidecode
+pacman -S whois rsync nmap tcpdump inetutils net-tools ndisc6
+
+exit
+umount -R /mnt
+swapoff -a
+reboot
