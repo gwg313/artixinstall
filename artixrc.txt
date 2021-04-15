@@ -22,7 +22,7 @@ mkfs.ext4 -L volRoot /dev/lvmSystem/volRoot
 swapon /dev/lvmSystem/volSwap
 mount /dev/lvmSystem/volRoot /mnt
 mkdir -p /mnt/boot/efi
-mount /dev/sdb1 /mnt/boot/efi
+	
 
 #below for hardened version
 basestrap /mnt base base-devel openrc
@@ -65,8 +65,8 @@ rc-update add haveged default
 pacman -S cronie cronie-openrc
 rc-update add cronie default
 
-useradd -m -G wheel -s /bin/bash USERNAME
-passwd USERNAME
+useradd -m -G wheel -s /bin/bash glen
+passwd glen
 sed -i "s/# %wheel ALL=(ALL) ALL/%wheel ALL=(ALL) ALL/g" /etc/sudoers
 
 pacman -S networkmanager networkmanager-openrc networkmanager-openvpn network-manager-applet
@@ -84,6 +84,23 @@ pacman -S vi artools bash-completion lsof strace
 pacman -S wget htop mc zip samba unrar p7zip unzip
 pacman -S hdparm smartmontools hwinfo dmidecode
 pacman -S whois rsync nmap tcpdump inetutils net-tools ndisc6
+
+pacman -S sway waybar kitty ponymix zsh firefox base-devel git pcmanfm
+ ncdu bpytop pcmanfm tldr wofi bat ripgrep fd tokei thefuck otf-font-awesome man exa xorg-xwayland ranger htop
+cd /opt
+sudo git clone https://aur.archlinux.org/yay.git
+sudo chown -R glen:users ./yay
+cd yay
+makepkg -si
+yay -S azote swaylock-effects-git autojump emacs-gcc-wayland-devel-bin nerd-fonts-complete wptk-git
+curl -L git.io/antigen > antigen.zsh
+sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
+
+git clone --depth 1 https://github.com/hlissner/doom-emacs ~/.emacs.d
+~/.emacs.d/bin/doom install
+
+git clone https://github.com/alexanderjeurissen/ranger_devicons ~/.config/ranger/plugins/ranger_devicons
+echo "default_linemode devicons" >> $HOME/.config/ranger/rc.conf
 
 exit
 umount -R /mnt
